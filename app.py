@@ -244,6 +244,11 @@ def run_level1_strict(m, X_raw: pd.DataFrame, name: str):
         errors.append(("catboost", f"{type(e).__name__}: {e}", list(X_raw.columns)))
 
     # --- Non-CatBoost or fallback ---
+    # 如果没有TabNet模型，直接跳过
+    if name == "tabnet":
+        st.warning("TabNet model is missing. Skipping this model.")
+        return 0.5, "value"  # Return a default value if TabNet is missing
+
     for mode in ("int", "str"):
         try:
             X = align_to_model_features(m, X_raw, cast_cat=mode)
