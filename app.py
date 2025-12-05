@@ -204,6 +204,57 @@ def align_to_model_features(m, X_in: pd.DataFrame, cast_cat="auto") -> pd.DataFr
                 pass
     return X
 
+def run_level1_strict(m, X_raw: pd.DataFrame, name: str):
+    """
+    Run level-1 models with strict handling of categorical and numerical columns.
+    """
+    errors = []
+
+    # --- CatBoost exact path ---
+    try:
+        is_pipe = isinstance(m, Pipeline)
+        clf = m.named_steps.get("clf", None) if is_pipe else m
+        if isinstance(clf, CatBoostClassifier):
+            X_cb = X_raw.copy()
+            # VP/MV -> str
+            for c in ["VP", "MV"]:
+                if c in X_cb.columns:
+                    X_cb[c] = X_cb[c].astype("object").astype(str)
+            # others -> float
+            for c in CLIN_ORDER:
+                if c in X_cb.columns:
+                    X_cb[c] = pd.to_numeric(X_cb[c], errors="coerce").astype(float)
+
+            cat_idx = [X_cb.columns.get_loc(c) for c in ["VP", "MV"] if c in X_cb.columns]
+            pool = Pool(X_cb, cat_features=cat_idx)
+            prob = clf.predict_proba(pool)[:, 1]
+            return float(prob[0]), "proba"
+    except Exception as e:
+        errors.append(("catboost", f"{type(e).__name__}: {e}", list(X_raw.columns)))
+
+    # --- Non-CatBoost or fallback ---
+    for mode in ("int", "str"):
+        try:
+            X = align_to_model_features(m, X_raw, cast_cat=mode)
+            if hasattr(m, "predict_proba"):
+                p = np.asarray(m.predict_proba(X))
+                if p.ndim == 2 and p.shape[1] >= 2:
+                    return float(p[0, 1]), "proba"
+            if hasattr(m, "decision_function"):
+                z = float(np.ravel(m.decision_function(X))[0])
+                p = 1.0 / (1.0 + np.exp(-z))
+                return float(p), "decision"
+            y = float(np.ravel(m.predict(X))[0])
+            return y, "value"
+        except Exception as e:
+            errors.append((mode, f"{type(e).__name__}: {e}", list(X_raw.columns)))
+            continue
+
+    msg = [f"Level-1 model '{name}' failed:"]
+    for m0, err, cols in errors:
+        msg.append(f"  - mode={m0}, error={err}, cols={cols}")
+    raise RuntimeError("\n".join(msg))
+
 def build_meta_input(level1_dict: dict, X_clin: pd.DataFrame, feature_names: list[str]):
     missing = [f for f in feature_names if f not in level1_dict]
     if missing:
