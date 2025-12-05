@@ -154,11 +154,15 @@ def _needs_string_cats(pipe: Pipeline):
 
 def align_to_model_features(m, X_in: pd.DataFrame, cast_cat="auto") -> pd.DataFrame:
     X = X_in.copy()
+
+    # Ensure column names match the ones the model expects (e.g., lowercase)
+    X.columns = [col.lower() for col in X.columns]  # Lowercase all column names
+
     feat_in = _get_feat_in(m)
 
-    # case-insensitive rename
+    # case-insensitive rename (if needed)
     if feat_in is not None:
-        lower_to_train = {c.lower(): c for c in feat_in}
+        lower_to_train = {c.lower(): c for c in feat_in}  # Ensure training feature names are lowercase
         ren = {}
         for c in X.columns:
             tgt = lower_to_train.get(c.lower())
@@ -206,7 +210,7 @@ def align_to_model_features(m, X_in: pd.DataFrame, cast_cat="auto") -> pd.DataFr
 
 def run_level1_strict(m, X_raw: pd.DataFrame, name: str):
     """
-    Run level-1 models with strict handling of categorical and numerical columns.
+    Run level-1 models with strict handling of numerical columns.
     """
     errors = []
 
@@ -216,18 +220,12 @@ def run_level1_strict(m, X_raw: pd.DataFrame, name: str):
         clf = m.named_steps.get("clf", None) if is_pipe else m
         if isinstance(clf, CatBoostClassifier):
             X_cb = X_raw.copy()
-            # VP/MV -> str
-            for c in ["VP", "MV"]:
-                if c in X_cb.columns:
-                    X_cb[c] = X_cb[c].astype("object").astype(str)
-            # others -> float
-            for c in CLIN_ORDER:
-                if c in X_cb.columns:
-                    X_cb[c] = pd.to_numeric(X_cb[c], errors="coerce").astype(float)
+            # 将所有列转换为 float 类型（如果需要的话）
+            for c in X_cb.columns:
+                X_cb[c] = pd.to_numeric(X_cb[c], errors="coerce").astype(float)
 
-            cat_idx = [X_cb.columns.get_loc(c) for c in ["VP", "MV"] if c in X_cb.columns]
-            pool = Pool(X_cb, cat_features=cat_idx)
-            prob = clf.predict_proba(pool)[:, 1]
+            # CatBoost 模型直接接受所有的连续特征，进行预测
+            prob = clf.predict_proba(X_cb)[:, 1]  # 获取类别 1 的概率
             return float(prob[0]), "proba"
     except Exception as e:
         errors.append(("catboost", f"{type(e).__name__}: {e}", list(X_raw.columns)))
