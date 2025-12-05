@@ -9,6 +9,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer  # For mean imputation
 from catboost import Pool, CatBoostClassifier
+from sklearn.dummy import DummyClassifier  # Fallback for TabNet
 
 # =============================
 # Page & env info
@@ -110,6 +111,12 @@ def load_level1_models():
 meta_model = load_meta_model()
 level1_models = load_level1_models()
 
+# Ensure fallback for TabNet model if missing
+if 'tabnet' not in level1_models:
+    # If TabNet model is missing, use DummyClassifier as a placeholder
+    st.warning("TabNet model not found. Using DummyClassifier as placeholder for TabNet.")
+    level1_models['tabnet'] = DummyClassifier(strategy="most_frequent")  # Default: Most frequent strategy
+
 exp_meta_feats = list(getattr(meta_model, "feature_names_in_", []))
 if not exp_meta_feats:
     exp_meta_feats = ["ada","cat","dt","gbm","knn","lgb","logistic","mlp","rf","svm","xgb"]
@@ -196,6 +203,18 @@ def align_to_model_features(m, X_in: pd.DataFrame, cast_cat="auto") -> pd.DataFr
             except Exception:
                 pass
     return X
+
+def build_meta_input(level1_dict: dict, X_clin: pd.DataFrame, feature_names: list[str]):
+    missing = [f for f in feature_names if f not in level1_dict]
+    if missing:
+        raise FileNotFoundError(f"Missing level-1 model files for: {missing}")
+    rec, modes = {}, {}
+    for name in feature_names:
+        p, mode = run_level1_strict(level1_dict[name], X_clin, name)
+        rec[name] = p
+        modes[name] = mode
+    X_meta = pd.DataFrame([[rec[c] for c in feature_names]], columns=feature_names)
+    return X_meta, modes
 
 # =============================
 # Predict
