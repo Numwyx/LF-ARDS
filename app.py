@@ -50,9 +50,6 @@ DISPLAY_NAME = {
     "PH": "PH",
 }
 
-# 明确 CatBoost 训练时的分类/数值列（按你的设定）
-NUM_COLS_FOR_CATBOOST = [c for c in CLIN_ORDER if c not in CAT_COLS_FOR_CATBOOST]
-
 # =============================
 # Sidebar inputs
 # =============================
