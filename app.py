@@ -155,8 +155,21 @@ def _needs_string_cats(pipe: Pipeline):
 def align_to_model_features(m, X_in: pd.DataFrame, cast_cat="auto") -> pd.DataFrame:
     X = X_in.copy()
 
-    # Ensure column names match the ones the model expects (e.g., lowercase)
-    X.columns = [col.lower() for col in X.columns]  # Lowercase all column names
+    # 手动映射输入数据的列名到训练时的列名
+    column_mapping = {
+        "APACHEII": "apacheii",
+        "HR": "heartrate",
+        "RR": "resprate",
+        "HB": "hemoglobin",
+        "Creatinine": "creatinine",
+        "PH": "ph"
+    }
+
+    # 将输入数据的列名转换为训练时的列名
+    X = X.rename(columns=column_mapping)
+
+    # 确保所有列名都是小写
+    X.columns = [col.lower() for col in X.columns]
 
     feat_in = _get_feat_in(m)
 
